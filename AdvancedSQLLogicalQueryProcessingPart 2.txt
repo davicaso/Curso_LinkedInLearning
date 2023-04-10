@@ -1,0 +1,218 @@
+-- 1.1 Subqueries
+
+SELECT MAX(Adoption__Fee)
+FROM Adoptions;
+
+SELECT *, (SELECT MAX(Adoption__Fee) FROM Adoptions)
+FROM Adoptions;
+
+SELECT *, (SELECT MAX(Adoption__Fee) FROM Adoptions),
+        (((SELECT MAX(Adoption_Fee) FROM Adoptions)
+        - Adoption_Fee) * 100)
+        / (SELECT MAX(Adoption_Fee) FROM Adoptions)
+        AS Discount_Percent
+FROM Adoptions;
+
+SELECT *,
+    ( SELECT MAX(Adoption_Fee)
+    FROM Adoptions AS A2
+    WHERE A2.Species = A1.Species
+    ) AS Max_Fee
+FROM Adoptions AS A1;
+
+SELECT COUNT(*)
+FROM Persons;
+
+SELECT DISTINCT P.*
+FROM Persons AS P
+        INNER JOIN 
+        Adoptions AS A
+        ON A.Adopter_Email = P.Email;
+
+SELECT *
+FROM Persons
+WHERE Email IN (SELECT Email FROM Adoptions);
+
+SELECT *
+FROM Persons AS P
+WHERE EXISTS ( 
+            SELECT NULL
+            FROM Adoptions AS A
+            WHERE A.Adopter_Email = P.Email
+            );
+
+
+
+
+-- 1.2 Set operators
+
+SELECT DISTINCT AN.Name, AN.Species
+FROM Animals AS AN
+        LEFT OUTER JOIN
+        Adoptions AS AD
+        ON AD.Name = AN.NAME
+            AND 
+            AD.Species = AN.Species
+WHERE AD.Name IS NULL;
+
+
+SELECT Name, Species
+FROM Animals AS AN
+    WHERE NOT EXISTS (
+                        SELECT NULL
+                        FROM Adoptions AS AD
+                        WHERE AD.Name = AN.Name
+                                AND
+                                AD.Species = AN.Species
+    );
+
+
+SELECT Name, Species
+FROM Animals
+EXCEPT
+SELECT Name, Species
+FROM Adoptions;
+
+SELECT DISTINCT AN.Breed, AN.Species
+FROM Animals AS AN
+    LEFT OUTER JOIN
+    Adoptions AS AD
+    ON AN.Species = AD.Species
+        AND
+        AN.Name = AD.Name
+WHERE AD.Species IS NULL;
+
+
+-- 2.1 Advanced Joins - Self and inequality Joins
+
+SELECT A1.Adopter_Email, A1.Adoption_Date,
+        A1.Name AS Name1, A1.Species AS Species1,
+        A2.Name AS Name2, A2.Species AS Species2
+FROM Adoptions AS A1
+        INNER JOIN
+        Adoptions AS A2
+        ON A1.Adopter_Email = A2.Adopter_Email
+            AND
+            A1.Adoption_Date = A2.Adoption_Date
+            AND
+            ((A1.Name = A2.Name AND A1.Species > A2.Species)
+            OR
+            (A1.Name > A2.Name AND A1.Species = A2.Species)
+            OR
+            (A1.Name > A2.Name AND A1.Species <> A2.Species))
+ORDER BY    A1.Adopter_Email, A1.Adoption_Date;
+
+-- 2.2 Lateral Joins
+
+
+SELECT A.Name, A.Species, A.Primary_Color, A.Breed,
+    (   SELECT Vaccine
+    FROM Vaccinations AS Vaccination_Time
+    WHERE V.Name = A.Name
+        AND
+        V.Species = A.Species
+    ORDER BY V.Vaccination_Time DESC
+    OFFSET 0 ROWS FETCH NEXT 1 ROW ONLY
+    ) AS Last_Vaccine,
+    (   SELECT Vaccine
+    FROM Vaccinations AS Vaccination_Time
+    WHERE V.Name = A.Name
+        AND
+        V.Species = A.Species
+    ORDER BY V.Vaccination_Time DESC
+    OFFSET 0 ROWS FETCH NEXT 1 ROW ONLY
+    ) AS Last_Vaccine_Time
+FROM Animals AS A;
+
+
+
+SELECT A1.Species, A1.Breed AS Breed, A1.Name AS Male, A2.Name AS Female 
+FROM Animals AS A1
+        INNER JOIN
+        Animals AS A2
+        ON A1.Species = A2.Species
+            AND
+            A1.Breed = A2.Breed
+            AND 
+            A1.Name <> A2.Name
+            AND
+            A1.Gender > A2.Gender 
+ORDER BY A1.Species, A1.Breed;
+
+
+-- 3.1 More on Grouping - ORdered set functions
+
+SELECT Adoption_date,
+        SUM(Adoption_Fee) AS Total_Fee,
+        STRING_AGG(CONCAT(Name, ' the ', Species), ', ')
+        WITHIN GROUP (ORDER BY Species, Name) AS Adopted_Animals
+FROM Adoptions
+GROUP BY Adoption_Date
+HAVING COUNT(*) > 1;
+
+
+SELECT Name,
+        Species,
+        COUNT (*) AS Number_Of_Vaccionations
+FROM Vaccionations
+GROUP BY Name, Species
+ORDER BY Species, Number_Of_Vaccionations DESC
+
+WITH Vaccionation_Ranking AS
+(  SELECT Name, Species, COUNT(*), AS Num_V
+    FROM Vaccionations
+    GROUP BY Name, Species)
+SELECT Species, MAX(Num_V) AS MAX_V, MIN(Num_V) AS MIN_V,
+    CAST(AVG(Num_V) AS DECIMAL(9,2)) AS AVG_V
+FROM  Vaccionation_Ranking
+GROUP BY Species;
+
+WITH Vaccionation_Ranking AS
+(  SELECT Name, Species, COUNT(*), AS Num_V
+    FROM Vaccionations
+    GROUP BY Name, Species)
+SELECT Species, MAX(Num_V) AS MAX_V, MIN(Num_V) AS MIN_V,
+    CAST(AVG(Num_V) AS DECIMAL(9,2)) AS AVG_V,
+    DENSE_RANK(7) WITHIN GROUP (ORDER BY Num_V DESC) AS How_Would_X_Rank
+FROM  Vaccionation_Ranking
+GROUP BY Species;
+
+
+WITH Vaccionation_Ranking AS
+(  SELECT Name, Species, COUNT(*), AS Num_V
+    FROM Vaccionations
+    GROUP BY Name, Species)
+SELECT Species, MAX(Num_V) AS MAX_V, MIN(Num_V) AS MIN_V,
+    CAST(AVG(Num_V) AS DECIMAL(9,2)) AS AVG_V,
+    DENSE_RANK(5) WITHIN GROUP (ORDER BY Num_V DESC) AS How_Would_X_Rank,
+    PERCENT_RANK(7) WITHIN GROUP (ORDER BY Num_V DESC) AS How_Would_X_Rank_Percent,
+    PERCENT_CONT(0.333) WITHIN GROUP (ORDER BY Num_V DESC) AS Inverse_Continous,
+    PERCENT_DISC(0.333) WITHIN GROUP (ORDER BY Num_V DESC) AS Inverse_Discrete
+FROM  Vaccionation_Ranking
+GROUP BY Species;
+
+-- 4.2 Grouping Sets
+
+SELECT YEAR(Adoption_Date) AS YEAR, adopter_Email,
+        COUNT(*) AS Monthly_Adoptions
+FROM Adoptions
+GROUP BY GROUPING SETS (
+                        YEAR(Adoption_Date),
+                        adopter_Email
+);
+
+SELECT COALESCE(Species, 'ALL') AS Species,
+        CASE 
+            WHEN GROUPING(Breed) = 1
+            THEN 'All'
+            ELSE Breed
+        END AS Breed,
+        GROUPING(Breed) AS Is_This_All_Breeds,
+        Count(*) AS Number_Of_Animals
+FROM Animals
+GROUP BY GROUPING SETS
+        (Species,
+        Breed,
+        ()
+        )
+ORDER BY Species, Breed;
